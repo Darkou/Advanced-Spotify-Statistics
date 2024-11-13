@@ -2,9 +2,10 @@
 
 import json 
 import glob
-import re
+
 import calendar
-import datetime, time
+import datetime
+import time
 
 import modules.pystyle as pystyle
 from modules.pystyle import Colors, Colorate, Center
@@ -14,14 +15,16 @@ pystyle.System.Title("Advanced Spotify Statistics (ASS)")
 print(Colors.white, "")
 pystyle.System.Clear()
 
-history_files = sorted(glob.glob("./history-files/*.json"), key=lambda item: item[-6]) #make list of all files (sorted from oldest to most recent)
+history_files = sorted(glob.glob("./history-files/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
 history = []
 for file in history_files: 
     with open(file, 'r', encoding="utf8") as f:
-        history += json.load(f) #make list of all song dicts (sorted from oldest to most recent)
+        history += json.load(f) # make list of all song dicts (sorted from oldest to most recent)
 
-start_date = re.split(r":|-| |T", history[0]["ts"])[0:3] # set data start date in list [year, month, day]
-end_date = re.split(r":|-| |T", history[-1]["ts"])[0:3] # set data end date in list [year, month, day]
+start_date = datetime.datetime.fromisoformat(history[0]["ts"]).timetuple() # set data start date from iso to tuple
+start_datetime = datetime.datetime.fromisoformat(history[0]["ts"])
+end_date = datetime.datetime.fromisoformat(history[-1]["ts"]).timetuple() # set data end date from iso to tuple
+
 
 def Page():
     display_date_window = f"Data from {start_date[2]} {list(calendar.month_name)[int(start_date[1])]} {(start_date[0])} to {end_date[2]} {list(calendar.month_name)[int(end_date[1])]} {(end_date[0])}."
@@ -31,7 +34,7 @@ def Page():
     print("\n")
 
 def Where():
-    r = input(f"{Fore.GREEN}[1] All time\n[2] Year\n[3] Month \n[4] Week \n> {Style.RESET_ALL}")
+    r = input(f"{Fore.GREEN}[1] All time\n[2] Year\n[3] Month \n[4] Week \n[5] Custom \n> {Style.RESET_ALL}")
 
     try:
         r = int(r[0])
@@ -48,12 +51,67 @@ def Where():
         Stats(2629743, "MONTH") # 1 month in epoch
     elif r == 4:
         Stats(604800, "WEEK") # 1 week in epoch
+    elif r == 5:
+        keywords = ["day", "days", "week", "weeks", "month", "months", "year", "years"]
+
+        def getTimestamp(operator, indice): # convert indice to timestamp
+            custom_time = 0
+            if indice == "day" or indice == "days":
+                custom_time = operator*86400
+            elif indice == "week" or indice == "weeks":
+                custom_time = operator*604800 
+            elif indice == "month" or indice == "months":
+                custom_time = operator*2629743 
+            elif indice == "year" or indice == "years":
+                custom_time = operator*31556926 
+            return custom_time
+        
+        def getTime(type):
+            answer = input(f"{Fore.CYAN}\t"+"{preposition} ".format(preposition="From" if type=="FROM" else "To") + f"{Fore.BLUE}(dd-mm-yyyy or keywords) {Fore.CYAN}> {Style.RESET_ALL}")
+            
+            if "-" in answer:
+                answer = [int(i) for i in answer.split("-")] 
+                return time.time()-datetime.datetime(answer[2], answer[1], answer[0]).timestamp()
+            else:
+                for index, word in enumerate(answer.split()):
+                    if word in keywords:
+                        try:
+                            operator = int(answer.split()[index-1])
+                            return getTimestamp(operator, str(word)) 
+                        except ValueError:
+                            error = True
+                    elif word == "today":
+                        return 0
+                    else:
+                        error = True
+                try:
+                    if error:
+                        print(Colorate.Error("\tFormat not accepted."))
+                        time.sleep(1)
+                        getTime(type)
+                except:
+                    if type == "FROM":
+                        return time.time()
+                    elif type == "TO":
+                        return 0
+        
+        from_time = getTime("FROM")
+        to_time = getTime("TO")
+
+        if from_time < to_time:
+            print(Colorate.Error("\tEnd date cannot be before start date."))
+            time.sleep(1)
+            from_time = getTime("FROM")
+            to_time = getTime("TO")
+        else:
+            Stats(from_time, "CUSTOM", to_time) 
+
     else:
         pystyle.System.Clear()
         Page()
         Where()
 
-def Stats(range, type):
+def Stats(from_time, type, to_time=0):
     pystyle.System.Clear()
 
     total_time = 0
@@ -61,19 +119,19 @@ def Stats(range, type):
     total_unique_tracks = {}
     total_artists = {}
     first = False
-
+    
     for song in history:
         song_name = song["master_metadata_track_name"]
         song_artist = song["master_metadata_album_artist_name"]
         song_played_time = song["ms_played"]
         
-        song_date = int(song["offline_timestamp"]/1000) if len(str(song["offline_timestamp"])) > 10 else song["offline_timestamp"]
-
-        if song_date >= int(time.time())-range:
+        song_date = datetime.datetime.fromisoformat(song["ts"]) # get song iso time
+        # print(from_time)
+        # print(datetime.datetime.fromtimestamp(int(time.time())-from_time))
+        if int(time.time())-to_time >= int(datetime.datetime.timestamp(song_date)) >= int(time.time())-from_time:
             if not first: # get variables of first date taken into account
-                first_date = int(song["offline_timestamp"]/1000) if len(str(song["offline_timestamp"])) > 10 else song["offline_timestamp"]
-                first_date_time = datetime.datetime.fromtimestamp(first_date).timetuple()
-                
+                first_date_epoch = datetime.datetime.timestamp(song_date)
+                first_date = song_date.timetuple()
                 first = True
 
             total_streams += 1
@@ -90,13 +148,14 @@ def Stats(range, type):
             else:
                 total_artists[song_artist][0] = int(total_artists[song_artist][0]) + 1
                 total_artists[song_artist][1] = int(total_artists[song_artist][1]) + song_played_time
-    
-    # get variables of last date taken into account
-    last_date = int(song["offline_timestamp"]/1000) if len(str(song["offline_timestamp"])) > 10 else song["offline_timestamp"]
-    last_date_time = datetime.datetime.fromtimestamp(last_date).timetuple()
+
+            # get variables of last date taken into account
+            last_date_epoch = datetime.datetime.timestamp(song_date)
+            last_date = song_date.timetuple()
 
     #set up for display
     total_time = total_time/1000 # convert ms to s
+    day_delta = (last_date_epoch-first_date_epoch)/86400 # time delta divided by s 
 
     min, s = divmod(total_time, 60)
     h, min = divmod(min, 60)
@@ -109,9 +168,9 @@ def Stats(range, type):
     
     #display init
     try:
-        display_date_window = f"Data from {first_date_time[2]} {list(calendar.month_name)[int(first_date_time[1])]} {(first_date_time[0])} to {last_date_time[2]} {list(calendar.month_name)[int(last_date_time[1])]} {(last_date_time[0])}."
+        display_date_window = f"Data from {first_date[2]} {list(calendar.month_name)[int(first_date[1])]} {(first_date[0])} to {last_date[2]} {list(calendar.month_name)[int(last_date[1])]} {(last_date[0])} ({int(day_delta)} days)."
         display_total_time = f"Total time streamed  :" + f"\n> {(d*24+h)*60+min} minutes \n> {d*24+h} hours \n> {d} days"
-        display_average_time = f"Average daily time : \n> {int(((d*24+h)*60+min)/((last_date-first_date)/86400))} minutes/day \n> {int(total_streams/((last_date-first_date)/86400))} streams/day"
+        display_average_time = f"Average daily time : \n> {int(((d*24+h)*60+min)/(day_delta))} minutes/day \n> {int(total_streams/(day_delta))} streams/day"
         display_total_streams = f"Streams : {total_streams}"
         display_total_unique_tracks = f"Different tracks : {len(total_unique_tracks)} ({int(len(total_unique_tracks)/total_streams*100)}%)"
         display_total_artists = f"Different artists : {len(total_artists)}"
