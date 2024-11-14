@@ -8,6 +8,9 @@ import datetime
 import os
 import time
 
+import tkinter as tk
+from tkinter import filedialog
+
 from pystyle import *
 from colorama import Fore, Style
 
@@ -15,15 +18,27 @@ System.Title("Advanced Spotify Statistics (ASS)")
 print({Fore.RED}, "")
 System.Clear()
 
-history_files = sorted(glob.glob("./history-files/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
+tk.Tk().withdraw()
+
+print("Select the folder that contains your .json Extended Streaming History files from Spotify. \nSelecting the root folder will automatically look for a default folder 'history-files'.")
+
+path = filedialog.askdirectory(initialdir=os.path.abspath(os.getcwd()),
+                               title='Please select a directory')
+
+history_files = sorted(glob.glob(path+"/*.json" if path != os.path.abspath(os.getcwd()).replace("\\", "/") else "./history-files/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
+
 history = []
+
 for file in history_files: 
     with open(file, 'r', encoding="utf8") as f:
         history += json.load(f) # make list of all song dicts (sorted from oldest to most recent)
-
-start_date = datetime.datetime.fromisoformat(history[0]["ts"]).timetuple() # set data start date from iso to tuple
-start_datetime = datetime.datetime.fromisoformat(history[0]["ts"])
-end_date = datetime.datetime.fromisoformat(history[-1]["ts"]).timetuple() # set data end date from iso to tuple
+try:
+    start_date = datetime.datetime.fromisoformat(history[0]["ts"]).timetuple() # set data start date from iso to tuple
+    start_datetime = datetime.datetime.fromisoformat(history[0]["ts"])
+    end_date = datetime.datetime.fromisoformat(history[-1]["ts"]).timetuple() # set data end date from iso to tuple
+except:
+    print(f"{Fore.RED}\tThere was a problem with the selected file(s). (exiting...){Style.RESET_ALL}")
+    quit()
 
 def Page():
     display_date_window = f"Data from {start_date[2]} {list(calendar.month_name)[int(start_date[1])]} {(start_date[0])} to {end_date[2]} {list(calendar.month_name)[int(end_date[1])]} {(end_date[0])}."
