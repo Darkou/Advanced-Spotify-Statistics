@@ -5,15 +5,15 @@ import glob
 
 import calendar
 import datetime
+import os
 import time
 
-import modules.pystyle as pystyle
-from modules.pystyle import Colors, Colorate, Center
+from pystyle import *
 from colorama import Fore, Style
 
-pystyle.System.Title("Advanced Spotify Statistics (ASS)")
-print(Colors.white, "")
-pystyle.System.Clear()
+System.Title("Advanced Spotify Statistics (ASS)")
+print({Fore.RED}, "")
+System.Clear()
 
 history_files = sorted(glob.glob("./history-files/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
 history = []
@@ -25,11 +25,10 @@ start_date = datetime.datetime.fromisoformat(history[0]["ts"]).timetuple() # set
 start_datetime = datetime.datetime.fromisoformat(history[0]["ts"])
 end_date = datetime.datetime.fromisoformat(history[-1]["ts"]).timetuple() # set data end date from iso to tuple
 
-
 def Page():
     display_date_window = f"Data from {start_date[2]} {list(calendar.month_name)[int(start_date[1])]} {(start_date[0])} to {end_date[2]} {list(calendar.month_name)[int(end_date[1])]} {(end_date[0])}."
 
-    print(pystyle.Box.Lines("\nAdvanced Spotify Statistics (ASS)\n"))
+    print(Box.Lines("\nAdvanced Spotify Statistics (ASS)\n"))
     print(Center.XCenter(display_date_window))
     print("\n")
 
@@ -39,7 +38,7 @@ def Where():
     try:
         r = int(r[0])
     except:
-        pystyle.System.Clear()
+        System.Clear()
         Page()
         Where()
     
@@ -63,15 +62,19 @@ def Where():
             elif indice == "month" or indice == "months":
                 custom_time = operator*2629743 
             elif indice == "year" or indice == "years":
-                custom_time = operator*31556926 
+                custom_time = operator*31556926
             return custom_time
         
         def getTime(type):
-            answer = input(f"{Fore.CYAN}\t"+"{preposition} ".format(preposition="From" if type=="FROM" else "To") + f"{Fore.BLUE}(dd-mm-yyyy or keywords) {Fore.CYAN}> {Style.RESET_ALL}")
-            
+            answer = input(f"{Fore.CYAN}\n\t"+"{preposition} ".format(preposition="From" if type=="FROM" else "To") + f"{Fore.BLUE}(dd-mm-yyyy or keywords) {Fore.CYAN}> {Style.RESET_ALL}")
+            error = False
             if "-" in answer:
-                answer = [int(i) for i in answer.split("-")] 
-                return time.time()-datetime.datetime(answer[2], answer[1], answer[0]).timestamp()
+                try:
+                    answer = [int(i) for i in answer.split("-")] 
+                    return int(time.time()-datetime.datetime(answer[2], answer[1], answer[0]).timestamp()) # don't know why int() but it works
+                except:
+                    print(f"{Fore.RED}\tFormat not accepted.{Style.RESET_ALL}")
+                    return None
             else:
                 for index, word in enumerate(answer.split()):
                     if word in keywords:
@@ -84,50 +87,63 @@ def Where():
                         return 0
                     else:
                         error = True
-                try:
-                    if error:
-                        print(Colorate.Error("\tFormat not accepted."))
-                        time.sleep(1)
-                        getTime(type)
-                except:
+
+                if error:
+                    print(f"{Fore.RED}\tFormat not accepted.{Style.RESET_ALL}")
+                    return None
+                # return maximum when no input
+                else:
                     if type == "FROM":
                         return time.time()
                     elif type == "TO":
                         return 0
-        
-        from_time = getTime("FROM")
-        to_time = getTime("TO")
 
-        if from_time < to_time:
-            print(Colorate.Error("\tEnd date cannot be before start date."))
-            time.sleep(1)
+        from_time = getTime("FROM")
+        isDone = False
+        while isDone is not True:
+            if from_time == None:
+                from_time = getTime("FROM")
+            else:
+                isDone = True
+
+        to_time = getTime("TO")
+        isDone = False
+        while isDone is not True:
+            if to_time == None:
+                to_time = getTime("TO")
+            else:
+                isDone = True
+
+        print(from_time, to_time)
+
+        if from_time <= to_time:
+            print(f"{Fore.RED}\tEnd date cannot be before start date.{Style.RESET_ALL}")
             from_time = getTime("FROM")
             to_time = getTime("TO")
         else:
             Stats(from_time, "CUSTOM", to_time) 
 
     else:
-        pystyle.System.Clear()
+        System.Clear()
         Page()
         Where()
 
 def Stats(from_time, type, to_time=0):
-    pystyle.System.Clear()
+    System.Clear()
 
     total_time = 0
     total_streams = 0
     total_unique_tracks = {}
     total_artists = {}
     first = False
-    
+
     for song in history:
         song_name = song["master_metadata_track_name"]
         song_artist = song["master_metadata_album_artist_name"]
         song_played_time = song["ms_played"]
         
         song_date = datetime.datetime.fromisoformat(song["ts"]) # get song iso time
-        # print(from_time)
-        # print(datetime.datetime.fromtimestamp(int(time.time())-from_time))
+
         if int(time.time())-to_time >= int(datetime.datetime.timestamp(song_date)) >= int(time.time())-from_time:
             if not first: # get variables of first date taken into account
                 first_date_epoch = datetime.datetime.timestamp(song_date)
@@ -177,27 +193,27 @@ def Stats(from_time, type, to_time=0):
         display_top_tracks = "Top tracks :"
         display_top_artists = "Top artists :"
     except UnboundLocalError:
-        print(Colorate.Color(Colors.red, "There is not enough data to display that."))
+        print(f"{Fore.RED}There is not enough data to display that.{Style.RESET_ALL}")
         time.sleep(2)
-        pystyle.System.Clear()
+        System.Clear()
         Page()
         Where()
     except Exception as e:
-        print(Colorate.Color(Colors.red, f"An error may have occured. ({e})"))
+        print(f"{Fore.RED}An error may have occured. ({e}){Style.RESET_ALL}")
         time.sleep(2)
-        pystyle.System.Clear()
+        System.Clear()
         Page()
         Where()
 
     #display print
-    print(pystyle.Box.Lines("\n"+type+" STATISTICS"+"\n"))
+    print(Box.Lines("\n"+type+" STATISTICS"+"\n"))
     print(Center.XCenter(display_date_window))
     print("\n")
-    print(pystyle.Box.DoubleCube(display_total_time))
-    print(pystyle.Box.DoubleCube(display_average_time))
-    print(pystyle.Box.DoubleCube(display_total_streams))
-    print(pystyle.Box.DoubleCube(display_total_unique_tracks))
-    print(pystyle.Box.DoubleCube(display_total_artists))
+    print(Box.DoubleCube(display_total_time))
+    print(Box.DoubleCube(display_average_time))
+    print(Box.DoubleCube(display_total_streams))
+    print(Box.DoubleCube(display_total_unique_tracks))
+    print(Box.DoubleCube(display_total_artists))
 
     # TOP TRACKS
     i=0
@@ -208,7 +224,7 @@ def Stats(from_time, type, to_time=0):
         else:
             display_top_tracks += f"\n#{i+1}  - {track_name} " + f"({int(total_unique_tracks[track_name][1]/1000//60)} minutes)"
         i += 1
-    print(pystyle.Box.DoubleCube(display_top_tracks))
+    print(Box.DoubleCube(display_top_tracks))
 
     # TOP ARTISTS
     i=0
@@ -219,10 +235,11 @@ def Stats(from_time, type, to_time=0):
         else:
             display_top_artists += f"\n#{i+1}  - {artist_name} " + f"({int(total_artists[artist_name][1]/1000//60)} minutes)"
         i += 1
-    print(pystyle.Box.DoubleCube(display_top_artists))
+    print(Box.DoubleCube(display_top_artists))
 
     Where()
 
 if __name__ == "__main__":
+    os.system("cls")
     Page()
     Where()
