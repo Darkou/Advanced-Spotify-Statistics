@@ -8,15 +8,10 @@ import datetime
 import os
 import time 
 
-import requests
-import dotenv
-
 from tkinter import Tk, filedialog
 
 from pystyle import *
 from colorama import Fore, Style
-
-dotenv.load_dotenv() # load .env file for api key
 
 System.Title("Advanced Spotify Statistics")
 System.Clear()
