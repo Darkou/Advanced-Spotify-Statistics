@@ -99,7 +99,8 @@ def getSong():
                     freeze = True
             time.sleep(0.5)
 
-    except:pass # just ignore any problem and pray
+    except Exception as error:
+        print("something happend :", error) # just ignore any problem and pray
 
 if __name__=="__main__":
     getSong()
