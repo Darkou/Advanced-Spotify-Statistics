@@ -2,3 +2,4 @@ datetime
 dotenv
 pystyle
 colorama
+spotipy

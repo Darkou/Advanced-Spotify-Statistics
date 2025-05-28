@@ -1,3 +1,6 @@
+# darkou :)
+
+from pystyle import *
 import dotenv
 import os
 import json
@@ -18,31 +21,32 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id,
                                             redirect_uri=redirect_uri,
                                             scope="user-read-currently-playing"))
 
-def getSong():
+def log():
+    # variables initialization
     last_song = ""
-    freeze = False
-    freeze_delta = 0
+    paused = False
+    pause_delta = 0
     last_track_ms_played = 0
     
-    try:
-        while True:
-            try: # necessary as if it's the first time, results won't exist yet
+    while True:
+        try:
+            try: # necessary because if it's the first time, results won't exist yet
                 last_track_duration = results["item"]["duration_ms"]
             except:pass
             
-            results = sp.current_user_playing_track()  
+            results = sp.current_user_playing_track() # get currently playing track to json format
             
             try:
                 if results["is_playing"] == True:
                     
-                    if freeze == True: 
-                        unfreeze_time = datetime.datetime.now().timestamp()*1000
-                        freeze_delta += int(unfreeze_time - freeze_time)
+                    if paused == True: # meaning that it's just after music is unpaused so we can calculate the pause time
+                        unpause_time = datetime.datetime.now().timestamp()*1000
+                        pause_delta += int(unpause_time - pause_time)
 
                     if results["item"]["name"] == last_song:
                         
                         if last_track_ms_played <= last_track_duration:
-                            last_track_ms_played = int(datetime.datetime.now().timestamp()*1000 - first_play_time - freeze_delta)
+                            last_track_ms_played = int(datetime.datetime.now().timestamp()*1000 - first_play_time - pause_delta)
 
                         elif last_track_ms_played > last_track_duration:
                             last_song = ""
@@ -63,44 +67,46 @@ def getSong():
                             with open("./history-files/history_99.json", "r+", encoding="utf-8") as fp: # load existant data 
                                 data = json.load(fp) # load last track
                                 
-                                last_track = data[-1] # get the last song written in file
-                                del data[-1] # remove the last song in order to replace it with an updated version
-                                last_track["ms_played"] = last_track_ms_played # set the played time
+                                try: # skip that part if that's the first song
+                                    last_track = data[-1] # get the last song written in file
+                                    del data[-1] # remove the last song in order to replace it with an updated version
+                                    last_track["ms_played"] = last_track_ms_played # set the played time
 
-                                if last_track_duration - last_track_ms_played > (10/100)*last_track_duration: # consider the song skipped if played no more than 
-                                    last_track["skipped"] = True
-                                else:
-                                    last_track["skipped"] = False
+                                    if last_track_duration - last_track_ms_played > (10/100)*last_track_duration: # consider the song skipped if played less than 90%
+                                        last_track["skipped"] = True
+                                    else:
+                                        last_track["skipped"] = False
 
-                                data.append(last_track) # update the last track
-                                
-                                data.append(track)
+                                    data.append(last_track) # update the last track
+                                except:pass
+
+                                data.append(track) # add new track
                                 fp.seek(0)
                                 json.dump(data, fp, indent=2)
 
-                        except: # the file is empty
+                        except Exception as e: # the file is empty
                             data = []
-                            with open("./history-files/history_99.json", "w", encoding="utf-8") as fp:
+                            with open("./history-files/history_99.json", "a", encoding="utf-8") as fp:
                                 data.append(track)
                                 json.dump(data, fp, indent=2)
 
                         last_track_ms_played = 0
-                        freeze_delta = 0
-                    freeze = False
+                        pause_delta = 0
+                    paused = False
+
                 elif results["is_playing"] == False: # music is paused
-                    if freeze == False:
-                        freeze_time = datetime.datetime.now().timestamp()*1000
-                        freeze = True
-            
+                    if paused == False:
+                        pause_time = datetime.datetime.now().timestamp()*1000
+                        paused = True
             
             except TypeError: # spotify is not open
-                if freeze == False:
-                    freeze_time = datetime.datetime.now().timestamp()*1000
-                    freeze = True
+                if paused == False:
+                    pause_time = datetime.datetime.now().timestamp()*1000
+                    paused = True
             time.sleep(0.5)
 
-    except Exception as error:
-        print("something happend :", error) # just ignore any problem and pray
+        except Exception as error:
+            print("something happend :", error) # just ignore any problem and pray
 
 if __name__=="__main__":
-    getSong()
+    log()
