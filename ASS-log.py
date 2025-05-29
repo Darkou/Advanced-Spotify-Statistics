@@ -27,8 +27,10 @@ def log():
     paused = False
     pause_delta = 0
     last_track_ms_played = 0
-    
-    while True:
+    file_number = 100
+    file_year = datetime.datetime.now().year
+
+    while True: # catch all kinds of error, especially with the api
         try:
             try: # necessary because if it's the first time, results won't exist yet
                 last_track_duration = results["item"]["duration_ms"]
@@ -64,7 +66,7 @@ def log():
                         track["spotify_track_uri"] = results["item"]["uri"]
                         
                         try: # the file is not empty
-                            with open("./history-files/history_99.json", "r+", encoding="utf-8") as fp: # load existant data 
+                            with open(f"./history-files/ass_log_streaming_history_{file_year}_{file_number}.json", "r+", encoding="utf-8") as fp: # load existant data 
                                 data = json.load(fp) # load last track
                                 
                                 try: # skip that part if that's the first song
@@ -86,7 +88,7 @@ def log():
 
                         except Exception as e: # the file is empty
                             data = []
-                            with open("./history-files/history_99.json", "a", encoding="utf-8") as fp:
+                            with open(f"./history-files/ass_log_streaming_history_{file_year}_{file_number}.json", "a", encoding="utf-8") as fp:
                                 data.append(track)
                                 json.dump(data, fp, indent=2)
 
@@ -98,15 +100,25 @@ def log():
                     if paused == False:
                         pause_time = datetime.datetime.now().timestamp()*1000
                         paused = True
+                    
+                    if os.path.getsize(f"./history-files/ass_log_streaming_history_{file_year}_{file_number}.json") > 12000000:
+                        file_number += 1
+                        file_year = datetime.datetime.now().year
+
             
             except TypeError: # spotify is not open
                 if paused == False:
                     pause_time = datetime.datetime.now().timestamp()*1000
                     paused = True
-            time.sleep(0.5)
+                
+                if os.path.getsize(f"./history-files/ass_log_streaming_history_{file_year}_{file_number}.json") > 12000000:
+                    file_number += 1
+                    file_year = datetime.datetime.now().year
+            
+            time.sleep(0.5) # requests will be done every x seconds
 
-        except Exception as error:
-            print("something happend :", error) # just ignore any problem and pray
+        except Exception as e:
+            print(e) # in case there is an error with the api, we just ignore it
 
 if __name__=="__main__":
     log()

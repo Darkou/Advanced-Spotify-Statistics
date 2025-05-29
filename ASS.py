@@ -6,7 +6,9 @@ import glob
 import calendar
 import datetime
 import os
-import time 
+import time
+import dotenv
+from tqdm import tqdm
 
 from tkinter import Tk, filedialog
 
@@ -18,20 +20,48 @@ System.Clear()
 
 Tk().withdraw()
 
-print("Select the folder that contains your .json Extended Streaming History files from Spotify. \nSelecting the root folder will automatically look for a default folder 'history-files'.")
+dotenv.load_dotenv()
 
-path = filedialog.askdirectory(initialdir=os.path.abspath(os.getcwd()),
-                               title='Please select a directory')
+local_path = os.getenv("LOCAL_PATH")
+smb_path = os.getenv("SMB_PATH")
 
-System.Clear()
+if local_path==None or smb_path==None:
+    print("Select the folder that contains your .json Extended Streaming History files from Spotify. \nSelecting the root folder will automatically look for a default folder 'history-files'.")
 
-print(f"{Fore.GREEN}\nCrawling through your file(s)... Please wait...{Style.RESET_ALL}")
+    local_path = filedialog.askdirectory(initialdir=os.path.abspath(os.getcwd()),
+                                            title='Please select a directory')
 
-history_files = sorted(glob.glob(path+"/*.json" if path != os.path.abspath(os.getcwd()).replace("\\", "/") else "./history-files/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
+    System.Clear()
+
+    if local_path==os.path.abspath(os.getcwd()).replace("\\", "/") or local_path=="":
+        local_path="./history-files/*.json"
+    else:
+        local_path+="/*.json"
+
+    has_smb = input(f"{Fore.RED}Do you want to select a folder located on a remote server (through SMB) ? (Y/N=any){Style.RESET_ALL}\n>").lower().strip()
+
+    if has_smb=="y" or has_smb=="yes":
+        print("On your remote server (through SMB protocol), select the folder that contains your .json files created by ASS-log.py.")
+        smb_path = filedialog.askdirectory(initialdir=os.path.abspath(os.getcwd()),
+                                                title='Please select a directory')
+    else:
+        System.Clear()
+        pass
+
+    with open(".env", "a", encoding="utf-8") as f:
+        f.write("\nLOCAL_PATH="+'"'+local_path+'"')
+        f.write("\nSMB_PATH="+'"'+smb_path+'"')
+
+print(f"{Fore.GREEN}\nCrawling through your file(s)... Please wait...{Style.RESET_ALL}\n")
+
+history_files = sorted(glob.glob(local_path), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
+smb_history_files = sorted(glob.glob(smb_path+"/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
+history_files += smb_history_files
+
 
 history = []
 
-for file in history_files: 
+for file in tqdm(history_files): 
     with open(file, 'r', encoding="utf8") as f:
         history += json.load(f) # make list of all song dicts (sorted from oldest to most recent)
 
@@ -51,7 +81,7 @@ def Page():
     print("\n")
 
 def Where():
-    r = input(f"{Fore.GREEN}[1] All time\n[2] Year\n[3] Month \n[4] Week \n[5] Custom \n> {Style.RESET_ALL}")
+    r = input(f"{Fore.GREEN}\n\n\n[1] All time\n[2] Year\n[3] Month \n[4] Week \n[5] Today \n[6] Custom \n> {Style.RESET_ALL}")
 
     try:
         r = int(r[0])
@@ -60,15 +90,26 @@ def Where():
         Page()
         Where()
     
+    dt = datetime.datetime.now()
+    dt_ts = dt.timestamp()
+
+    print(dt.year)
+
     if r == 1:
         Stats(time.time(), "ALL-TIME") # all time
     elif r == 2:
-        Stats(31556926, "YEAR") # 1 year in epoch
+        dt = datetime.datetime(dt.year, 1, 2, 0, 0).timestamp()
+        Stats(dt_ts-dt, "YEAR") # 1 year in epoch
     elif r == 3:
-        Stats(2629743, "MONTH") # 1 month in epoch
+        dt = datetime.datetime(dt.year, dt.month, 2, 0, 0).timestamp()
+        Stats(dt_ts-dt, "MONTH") # 1 month in epoch
     elif r == 4:
-        Stats(604800, "WEEK") # 1 week in epoch
+        dt = datetime.datetime(dt.year, dt.month, dt.day-6, 0, 0).timestamp()
+        Stats(dt_ts-dt, "WEEK") # 1 week in epoch
     elif r == 5:
+        dt = datetime.datetime(dt.year, dt.month, dt.day, 0, 0).timestamp()
+        Stats(dt_ts-dt, "TODAY") # 1 week in epoch
+    elif r == 6:
         keywords = ["day", "days", "week", "weeks", "month", "months", "year", "years"]
 
         def getTimestamp(operator, indice): # convert indice to timestamp
@@ -82,7 +123,7 @@ def Where():
             elif indice == "year" or indice == "years":
                 custom_time = operator*31556926
             return custom_time
-        
+
         def getTime(type):
             answer = input(f"{Fore.CYAN}\n\t"+"{preposition} ".format(preposition="From" if type=="FROM" else "To") + f"{Fore.BLUE}(dd-mm-yyyy or keywords) {Fore.CYAN}> {Style.RESET_ALL}")
             error = False
@@ -153,63 +194,93 @@ def Stats(from_time, type, to_time=0):
     total_streams = 0
     total_unique_tracks = {}
     total_artists = {}
-    first = False
+    total_albums = {}
+
+    streams_date_list = []
+    # listening_clock = {"00":0,"01":0,"02":0,"03":0,"04":0,"05":0,"06":0,"07":0,"08":0,"09":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0,"20":0,"21":0,"22":0,"23":0}
+
+    first = True
 
     for song in history:
-        song_name = song["master_metadata_track_name"]
-        song_artist = song["master_metadata_album_artist_name"]
-        song_played_time = song["ms_played"]
-        
-        song_date = datetime.datetime.fromisoformat(song["ts"]) # get song iso time
+        try:
+            song_date = datetime.datetime.fromisoformat(song["ts"])
+            
+            if song_date not in streams_date_list: # check if song is not duplicate
+                song_name = song["master_metadata_track_name"]
+                song_artist = song["master_metadata_album_artist_name"]
+                song_album = song["master_metadata_album_album_name"]
+                song_played_time = song["ms_played"]
+                
+                # song_hour = datetime.datetime.fromisoformat(song["ts"]).strftime("%H")
 
-        if int(time.time())-to_time >= int(datetime.datetime.timestamp(song_date)) >= int(time.time())-from_time:
-            if not first: # get variables of first date taken into account
-                first_date_epoch = datetime.datetime.timestamp(song_date)
-                first_date = song_date.timetuple()
-                first = True
+                if int(time.time())-to_time >= int(datetime.datetime.timestamp(song_date)) >= int(time.time())-from_time:
+                    if first: # get variables of first date taken into account
+                        first_date_epoch = datetime.datetime.timestamp(song_date)
+                        first_date = song_date.timetuple()
+                        first = False
 
-            total_streams += 1
-            total_time += song_played_time
-        
-            if song_name not in total_unique_tracks: 
-                total_unique_tracks[song_name] = [1, song_played_time]
-            else:
-                total_unique_tracks[song_name][0] = int(total_unique_tracks[song_name][0]) + 1
-                total_unique_tracks[song_name][1] = int(total_unique_tracks[song_name][1]) + song_played_time
+                    total_streams += 1
+                    total_time += song_played_time
+                
+                    if song_name not in total_unique_tracks: 
+                        total_unique_tracks[song_name] = [1, song_played_time, song_artist]
+                    else:
+                        total_unique_tracks[song_name][0] = int(total_unique_tracks[song_name][0]) + 1
+                        total_unique_tracks[song_name][1] = int(total_unique_tracks[song_name][1]) + song_played_time
 
-            if song_artist not in total_artists:
-                total_artists[song_artist] = [1, song_played_time]
-            else:
-                total_artists[song_artist][0] = int(total_artists[song_artist][0]) + 1
-                total_artists[song_artist][1] = int(total_artists[song_artist][1]) + song_played_time
+                    if song_artist not in total_artists:
+                        total_artists[song_artist] = [1, song_played_time]
+                    else:
+                        total_artists[song_artist][0] = int(total_artists[song_artist][0]) + 1
+                        total_artists[song_artist][1] = int(total_artists[song_artist][1]) + song_played_time
 
-            # get variables of latest date taken into account
-            last_date_epoch = datetime.datetime.timestamp(song_date)
-            last_date = song_date.timetuple()
+                    if song_album not in total_albums:
+                        total_albums[song_album] = [1, song_played_time, song_artist]
+                    else:
+                        total_albums[song_album][0] = int(total_albums[song_album][0]) + 1
+                        total_albums[song_album][1] = int(total_albums[song_album][1]) + song_played_time
+                    
+                    # listening_clock[song_hour] += 1
 
-    #set up for display
-    total_time = total_time/1000 # convert ms to s
-    day_delta = (last_date_epoch-first_date_epoch)/86400 # time delta divided by s into days
+                    # get variables of latest date taken into account
+                    last_date_epoch = datetime.datetime.timestamp(song_date)
+                    last_date = song_date.timetuple()
 
-    min, s = divmod(total_time, 60)
-    h, min = divmod(min, 60)
-    d, h = divmod(h, 24)
-    d, h, min, s = int(d), int(h), int(min), int(s)
-
-    #sort dict by streamed time
-    total_unique_tracks = dict(sorted(total_unique_tracks.items(), reverse=True, key=lambda item: item[1][1])) 
-    total_artists = dict(sorted(total_artists.items(), reverse=True, key=lambda item: item[1][1]))
-    
-    #display init
+        except KeyError: 
+            # that means that the song isn't well written, it could be because it's the last song from ASS-log files
+            # since the script doesn't write the last song ms_played until another song is played
+            pass
     try:
+        #set up for display
+        total_time = total_time/1000 # convert ms to s
+        day_delta = (last_date_epoch-first_date_epoch)/86400 # time delta divided by s into days
+
+        min, s = divmod(total_time, 60)
+        h, min = divmod(min, 60)
+        d, h = divmod(h, 24)
+        d, h, min, s = int(d), int(h), int(min), int(s)
+
+        #sort dict by streamed time
+        total_unique_tracks = dict(sorted(total_unique_tracks.items(), reverse=True, key=lambda item: item[1][1])) 
+        total_artists = dict(sorted(total_artists.items(), reverse=True, key=lambda item: item[1][1]))
+        total_albums = dict(sorted(total_albums.items(), reverse=True, key=lambda item: item[1][1]))
+
+        #sort dict by hour
+        # listening_clock = dict(sorted(listening_clock.items()))
+        
+        #display initialization
+    
         display_date_window = f"Data from {first_date[2]} {list(calendar.month_name)[int(first_date[1])]} {(first_date[0])} to {last_date[2]} {list(calendar.month_name)[int(last_date[1])]} {(last_date[0])} ({int(day_delta)} days)."
-        display_total_time = f"Total time streamed  :" + f"\n> {(d*24+h)*60+min} minutes \n> {d*24+h} hours \n> {d} days"
-        display_average_time = f"Average daily time : \n> {int(((d*24+h)*60+min)/(day_delta))} minutes/day \n> {int(total_streams/(day_delta))} streams/day"
-        display_total_streams = f"Streams : {total_streams}"
-        display_total_unique_tracks = f"Different tracks : {len(total_unique_tracks)} ({int(len(total_unique_tracks)/total_streams*100)}%)"
-        display_total_artists = f"Different artists : {len(total_artists)}"
-        display_top_tracks = "Top tracks :"
-        display_top_artists = "Top artists :"
+        display_total_time = f"\n{Style.BRIGHT}{Fore.LIGHTGREEN_EX}TOTAL TIME STREAMED{Style.RESET_ALL}\n\n| {(d*24+h)*60+min} minutes \n| {d*24+h} hours \n| {d} days"
+        display_average_time = f"\n{"="*50}\n\n{Style.BRIGHT}{Fore.LIGHTGREEN_EX}AVERAGE DAILY TIME{Style.RESET_ALL}\n\n| {int(((d*24+h)*60+min)/(day_delta))} minutes/day \n| {int(total_streams/(day_delta))} streams/day"
+        display_total_streams = f"\n{"="*50}\n\n{Style.BRIGHT}{Fore.LIGHTGREEN_EX}STREAMS{Style.RESET_ALL} | {total_streams}"
+        display_total_unique_tracks = f"\n{"="*50}\n\n{Style.BRIGHT}{Fore.LIGHTGREEN_EX}DIFFERENT TRACKS{Style.RESET_ALL} | {len(total_unique_tracks)} ({int(len(total_unique_tracks)/total_streams*100)}%)"
+        display_total_artists = f"\n{Style.BRIGHT}{Fore.LIGHTGREEN_EX}DIFFERENT ARTISTS{Style.RESET_ALL} | {len(total_artists)}"
+        display_total_albums = f"\n{Style.BRIGHT}{Fore.LIGHTGREEN_EX}DIFFERENT ALBUMS{Style.RESET_ALL} | {len(total_albums)}"
+        display_top_tracks = f"\n{"="*50}\n\n{Fore.BLUE}=========={Style.RESET_ALL}\n{Style.BRIGHT}TOP TRACKS{Style.RESET_ALL}\n{Fore.BLUE}=========={Style.RESET_ALL}\n"
+        display_top_artists = f"\n\n{Fore.BLUE}==========={Style.RESET_ALL}\n{Style.BRIGHT}TOP ARTISTS{Style.RESET_ALL}\n{Fore.BLUE}==========={Style.RESET_ALL}\n"
+        display_top_albums = f"\n\n{Fore.BLUE}=========={Style.RESET_ALL}\n{Style.BRIGHT}TOP ALBUMS{Style.RESET_ALL}\n{Fore.BLUE}=========={Style.RESET_ALL}\n"
+        # display_listening_clock = "Listening clock :"
     except UnboundLocalError:
         print(f"{Fore.RED}There is not enough data to display that.{Style.RESET_ALL}")
         time.sleep(2)
@@ -226,36 +297,68 @@ def Stats(from_time, type, to_time=0):
     #display print
     print(Box.Lines("\n"+type+" STATISTICS"+"\n"))
     print(Center.XCenter(display_date_window))
-    print("\n")
-    print(Box.DoubleCube(display_total_time))
-    print(Box.DoubleCube(display_average_time))
-    print(Box.DoubleCube(display_total_streams))
-    print(Box.DoubleCube(display_total_unique_tracks))
-    print(Box.DoubleCube(display_total_artists))
+    print((display_total_time))
+    print((display_average_time))
+    print((display_total_streams))
+    print((display_total_unique_tracks))
+    print((display_total_artists))
+    print((display_total_albums))
 
     # TOP TRACKS
     i=0
     while i < 10:
         track_name = list(total_unique_tracks.keys())[i]
+        track_artist = total_unique_tracks[track_name][2]
+        if len(track_name) > 40:
+            try:
+                track_name_display = track_name[0:track_name.index(" ", 40)]+"..."
+            except:
+                track_name_display = track_name
+        else:
+            track_name_display = track_name
         if i+1 == 10: 
-            display_top_tracks += f"\n#{i+1} - {track_name} " + f"({int(total_unique_tracks[track_name][1]/1000//60)} minutes)"
+            display_top_tracks += f"\n#{i+1} - {track_name_display} {Style.DIM}by {track_artist}{Style.RESET_ALL} " + f"{Fore.CYAN}({int(total_unique_tracks[track_name][1]/1000//60)} minutes){Style.RESET_ALL}" + " "
         else: # add one more space so that evertyhing is aligned
-            display_top_tracks += f"\n#{i+1}  - {track_name} " + f"({int(total_unique_tracks[track_name][1]/1000//60)} minutes)"
+            display_top_tracks += f"\n#{i+1}  - {track_name_display} {Style.DIM}by {track_artist}{Style.RESET_ALL} " + f"{Fore.CYAN}({int(total_unique_tracks[track_name][1]/1000//60)} minutes){Style.RESET_ALL}" + " "
         i += 1
-    print(Box.DoubleCube(display_top_tracks))
+    print((display_top_tracks))
 
     # TOP ARTISTS
     i=0
     while i < 10:
         artist_name = list(total_artists.keys())[i]
         if i+1 == 10: 
-            display_top_artists += f"\n#{i+1} - {artist_name} " + f"({int(total_artists[artist_name][1]/1000//60)} minutes)"
+            display_top_artists += f"\n#{i+1} - {artist_name} " + f"{Fore.CYAN}({int(total_artists[artist_name][1]/1000//60)} minutes){Style.RESET_ALL}" + " "
         else:
-            display_top_artists += f"\n#{i+1}  - {artist_name} " + f"({int(total_artists[artist_name][1]/1000//60)} minutes)"
+            display_top_artists += f"\n#{i+1}  - {artist_name} " + f"{Fore.CYAN}({int(total_artists[artist_name][1]/1000//60)} minutes){Style.RESET_ALL}" + " "
         i += 1
-    print(Box.DoubleCube(display_top_artists))
+    print((display_top_artists))
 
-    # print(total_unique_tracks)
+    # TOP ALBUMS
+    i=0
+    while i < 10:
+        album_name = list(total_albums.keys())[i]
+        album_artist = total_albums[album_name][2]
+        if len(album_name) > 40:
+            try:
+                album_name_display = album_name[0:album_name.index(" ", 40)]+"..."
+            except:
+                album_name_display = album_name
+        else:
+            album_name_display = album_name
+        if i+1 == 10: 
+            display_top_albums += f"\n#{i+1} - {album_name_display} {Style.DIM}by {album_artist}{Style.RESET_ALL} " + f"{Fore.CYAN}({int(total_albums[album_name][1]/1000//60)} minutes){Style.RESET_ALL}" + " "
+        else:
+            display_top_albums += f"\n#{i+1}  - {album_name_display} {Style.DIM}by {album_artist}{Style.RESET_ALL} " + f"{Fore.CYAN}({int(total_albums[album_name][1]/1000//60)} minutes){Style.RESET_ALL}" + " "
+        i += 1
+    print((display_top_albums))
+    
+    # LISTENING CLOCK
+    # for hour in listening_clock:
+    #     percentage = int(listening_clock[hour]/total_streams*100)
+    #     display_listening_clock += f"\n\n{hour}h |"+("█"*(percentage))+" "+str(percentage)+"%"
+    #     pass
+    # print((display_listening_clock))
 
     Where()
 
