@@ -25,8 +25,13 @@ dotenv.load_dotenv()
 local_path = os.getenv("LOCAL_PATH")
 smb_path = os.getenv("SMB_PATH")
 
-if local_path==None or smb_path==None:
-    print("Select the folder that contains your .json Extended Streaming History files from Spotify. \nSelecting the root folder will automatically look for a default folder 'history-files'.")
+history_files = []
+smb_history_files = []
+
+has_smb = False
+
+if local_path==None:
+    print(f"{Fore.RED}Select the folder that contains your .json Extended Streaming History files from Spotify. \nSelecting the root folder will automatically look for a default folder 'history-files'.")
 
     local_path = filedialog.askdirectory(initialdir=os.path.abspath(os.getcwd()),
                                             title='Please select a directory')
@@ -38,32 +43,62 @@ if local_path==None or smb_path==None:
     else:
         local_path+="/*.json"
 
+    with open(".env", "a", encoding="utf-8") as f:
+        f.write("\n\nLOCAL_PATH="+'"'+local_path+'"')
+
+if smb_path==None:
     has_smb = input(f"{Fore.RED}Do you want to select a folder located on a remote server (through SMB) ? (Y/N=any){Style.RESET_ALL}\n>").lower().strip()
 
     if has_smb=="y" or has_smb=="yes":
+        has_smb = True
         print("On your remote server (through SMB protocol), select the folder that contains your .json files created by ASS-log.py.")
         smb_path = filedialog.askdirectory(initialdir=os.path.abspath(os.getcwd()),
                                                 title='Please select a directory')
+        with open(".env", "a", encoding="utf-8") as f:
+            f.write("\nSMB_PATH="+'"'+smb_path+'"')
     else:
+        with open(".env", "a", encoding="utf-8") as f:
+            f.write('\nSMB_PATH=""')
         System.Clear()
         pass
+elif smb_path=="": #so that it won't ask for smb path next time
+    pass
+else:
+    has_smb = True
 
-    with open(".env", "a", encoding="utf-8") as f:
-        f.write("\nLOCAL_PATH="+'"'+local_path+'"')
-        f.write("\nSMB_PATH="+'"'+smb_path+'"')
+System.Clear()
 
 print(f"{Fore.GREEN}\nCrawling through your file(s)... Please wait...{Style.RESET_ALL}\n")
 
+history_local = []
+
 history_files = sorted(glob.glob(local_path), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
-smb_history_files = sorted(glob.glob(smb_path+"/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
-history_files += smb_history_files
-
-
-history = []
 
 for file in tqdm(history_files): 
     with open(file, 'r', encoding="utf8") as f:
-        history += json.load(f) # make list of all song dicts (sorted from oldest to most recent)
+        history_local += json.load(f) # make list of all song dicts (sorted from oldest to most recent)
+
+last_date_local = datetime.datetime.fromisoformat((history_local[-1]["ts"])).timestamp()
+
+if has_smb:
+    smb_history_files = sorted(glob.glob(smb_path+"/*.json"), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
+
+    history_smb = []
+
+    for file in tqdm(smb_history_files): 
+        with open(file, 'r', encoding="utf8") as f:
+            history_smb += json.load(f) # make list of all song dicts (sorted from oldest to most recent)
+
+    for idx, track_smb in enumerate(history_smb):
+        print(idx)
+        if datetime.datetime.fromisoformat(track_smb["ts"]).timestamp() < last_date_local:
+            print(datetime.datetime.fromisoformat(track_smb["ts"]).timestamp())
+            del history_smb[idx]
+        else:
+            break
+    history = history_local + history_smb
+else:
+    history = history_local
 
 try:
     start_date = datetime.datetime.fromisoformat(history[0]["ts"]).timetuple() # set data start date from iso to tuple
@@ -196,55 +231,46 @@ def Stats(from_time, type, to_time=0):
     total_artists = {}
     total_albums = {}
 
-    streams_date_list = []
-    # listening_clock = {"00":0,"01":0,"02":0,"03":0,"04":0,"05":0,"06":0,"07":0,"08":0,"09":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0,"20":0,"21":0,"22":0,"23":0}
-
     first = True
 
     for song in history:
         try:
+            song_name = song["master_metadata_track_name"]
+            song_artist = song["master_metadata_album_artist_name"]
+            song_album = song["master_metadata_album_album_name"]
+            song_played_time = song["ms_played"]
             song_date = datetime.datetime.fromisoformat(song["ts"])
+
+            if int(time.time())-to_time >= int(datetime.datetime.timestamp(song_date)) >= int(time.time())-from_time:
+                if first: # get variables of first date taken into account
+                    first_date_epoch = datetime.datetime.timestamp(song_date)
+                    first_date = song_date.timetuple()
+                    first = False
+
+                total_streams += 1
+                total_time += song_played_time
             
-            if song_date not in streams_date_list: # check if song is not duplicate
-                song_name = song["master_metadata_track_name"]
-                song_artist = song["master_metadata_album_artist_name"]
-                song_album = song["master_metadata_album_album_name"]
-                song_played_time = song["ms_played"]
+                if song_name not in total_unique_tracks: 
+                    total_unique_tracks[song_name] = [1, song_played_time, song_artist]
+                else:
+                    total_unique_tracks[song_name][0] = int(total_unique_tracks[song_name][0]) + 1
+                    total_unique_tracks[song_name][1] = int(total_unique_tracks[song_name][1]) + song_played_time
+
+                if song_artist not in total_artists:
+                    total_artists[song_artist] = [1, song_played_time]
+                else:
+                    total_artists[song_artist][0] = int(total_artists[song_artist][0]) + 1
+                    total_artists[song_artist][1] = int(total_artists[song_artist][1]) + song_played_time
+
+                if song_album not in total_albums:
+                    total_albums[song_album] = [1, song_played_time, song_artist]
+                else:
+                    total_albums[song_album][0] = int(total_albums[song_album][0]) + 1
+                    total_albums[song_album][1] = int(total_albums[song_album][1]) + song_played_time
                 
-                # song_hour = datetime.datetime.fromisoformat(song["ts"]).strftime("%H")
-
-                if int(time.time())-to_time >= int(datetime.datetime.timestamp(song_date)) >= int(time.time())-from_time:
-                    if first: # get variables of first date taken into account
-                        first_date_epoch = datetime.datetime.timestamp(song_date)
-                        first_date = song_date.timetuple()
-                        first = False
-
-                    total_streams += 1
-                    total_time += song_played_time
-                
-                    if song_name not in total_unique_tracks: 
-                        total_unique_tracks[song_name] = [1, song_played_time, song_artist]
-                    else:
-                        total_unique_tracks[song_name][0] = int(total_unique_tracks[song_name][0]) + 1
-                        total_unique_tracks[song_name][1] = int(total_unique_tracks[song_name][1]) + song_played_time
-
-                    if song_artist not in total_artists:
-                        total_artists[song_artist] = [1, song_played_time]
-                    else:
-                        total_artists[song_artist][0] = int(total_artists[song_artist][0]) + 1
-                        total_artists[song_artist][1] = int(total_artists[song_artist][1]) + song_played_time
-
-                    if song_album not in total_albums:
-                        total_albums[song_album] = [1, song_played_time, song_artist]
-                    else:
-                        total_albums[song_album][0] = int(total_albums[song_album][0]) + 1
-                        total_albums[song_album][1] = int(total_albums[song_album][1]) + song_played_time
-                    
-                    # listening_clock[song_hour] += 1
-
-                    # get variables of latest date taken into account
-                    last_date_epoch = datetime.datetime.timestamp(song_date)
-                    last_date = song_date.timetuple()
+                # get variables of latest date taken into account
+                last_date_epoch = datetime.datetime.timestamp(song_date)
+                last_date = song_date.timetuple()
 
         except KeyError: 
             # that means that the song isn't well written, it could be because it's the last song from ASS-log files
@@ -265,9 +291,6 @@ def Stats(from_time, type, to_time=0):
         total_artists = dict(sorted(total_artists.items(), reverse=True, key=lambda item: item[1][1]))
         total_albums = dict(sorted(total_albums.items(), reverse=True, key=lambda item: item[1][1]))
 
-        #sort dict by hour
-        # listening_clock = dict(sorted(listening_clock.items()))
-        
         #display initialization
     
         display_date_window = f"Data from {first_date[2]} {list(calendar.month_name)[int(first_date[1])]} {(first_date[0])} to {last_date[2]} {list(calendar.month_name)[int(last_date[1])]} {(last_date[0])} ({int(day_delta)} days)."
@@ -280,7 +303,6 @@ def Stats(from_time, type, to_time=0):
         display_top_tracks = f"\n{"="*50}\n\n{Fore.BLUE}=========={Style.RESET_ALL}\n{Style.BRIGHT}TOP TRACKS{Style.RESET_ALL}\n{Fore.BLUE}=========={Style.RESET_ALL}\n"
         display_top_artists = f"\n\n{Fore.BLUE}==========={Style.RESET_ALL}\n{Style.BRIGHT}TOP ARTISTS{Style.RESET_ALL}\n{Fore.BLUE}==========={Style.RESET_ALL}\n"
         display_top_albums = f"\n\n{Fore.BLUE}=========={Style.RESET_ALL}\n{Style.BRIGHT}TOP ALBUMS{Style.RESET_ALL}\n{Fore.BLUE}=========={Style.RESET_ALL}\n"
-        # display_listening_clock = "Listening clock :"
     except UnboundLocalError:
         print(f"{Fore.RED}There is not enough data to display that.{Style.RESET_ALL}")
         time.sleep(2)
@@ -352,13 +374,6 @@ def Stats(from_time, type, to_time=0):
             display_top_albums += f"\n#{i+1}  - {album_name_display} {Style.DIM}by {album_artist}{Style.RESET_ALL} " + f"{Fore.CYAN}({int(total_albums[album_name][1]/1000//60)} minutes){Style.RESET_ALL}" + " "
         i += 1
     print((display_top_albums))
-    
-    # LISTENING CLOCK
-    # for hour in listening_clock:
-    #     percentage = int(listening_clock[hour]/total_streams*100)
-    #     display_listening_clock += f"\n\n{hour}h |"+("█"*(percentage))+" "+str(percentage)+"%"
-    #     pass
-    # print((display_listening_clock))
 
     Where()
 
