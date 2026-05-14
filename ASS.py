@@ -72,8 +72,13 @@ print(f"{Fore.GREEN}\nCrawling through your file(s)... Please wait...{Style.RESE
 
 history_local = []
 
-history_files = sorted(glob.glob(local_path), key=lambda file: int(file[file.rindex("_")+1:file.rindex(".")])) # make list of all files (sorted from oldest to most recent)
-
+history_files = sorted(
+    glob.glob(local_path),
+    key=lambda file: tuple(
+        map(int, os.path.splitext(os.path.basename(file))[0].split("_")[3:])
+    )
+)
+    
 for file in tqdm(history_files): 
     with open(file, 'r', encoding="utf8") as f:
         history_local += json.load(f) # make list of all song dicts (sorted from oldest to most recent)

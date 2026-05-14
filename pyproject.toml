@@ -1,0 +1,19 @@
+[project]
+name = "advanced-spotify-statistics"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Darkou",email = "darkougaming@protonmail.com"}
+]
+readme = "README.md"
+requires-python = "^3.14"
+dependencies = [
+    "dotenv (>=0.9.9,<0.10.0)",
+    "tqdm (>=4.67.3,<5.0.0)",
+    "pystyle (>=2.9,<3.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
